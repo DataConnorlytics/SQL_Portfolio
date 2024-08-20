@@ -1,0 +1,105 @@
+--- Sales Growth per Traffic Source ---- 
+
+
+SELECT
+    CASE
+        WHEN traffic_source LIKE '%facebook%' OR traffic_source LIKE '%insta%' THEN 'meta'
+        WHEN traffic_source LIKE '%you%' THEN 'google'
+        ELSE traffic_source
+    END AS traffic_source,
+    EXTRACT(YEAR FROM s.date) AS year,
+    EXTRACT(MONTH FROM s.date) AS month,
+    SUM(transaction_total) AS total_transaction
+FROM `prism_acquire.sessions` AS s
+INNER JOIN `prism_acquire.transactions` AS t
+ON s.session_id = t.session_id
+WHERE EXTRACT(YEAR FROM s.date) IN (2020, 2021)
+    AND traffic_source IN ('meta', 'google', 'rtbhouse')
+GROUP BY traffic_source, year, month
+ORDER BY year, month;
+
+--- Total Costs Adplatforms --- 
+WITH Costs_2020 AS (
+    SELECT
+        SUM(criteo_cost) AS Criteo_TotalCost,
+        SUM(google_cost) AS Google_TotalCost,
+        SUM(meta_cost) AS Meta_TotalCost,
+        SUM(rtbhouse_cost) AS RTBhouse_TotalCost,
+        SUM(tiktok_cost) AS Tiktok_TotalCost 
+    FROM `prism_acquire.adplatform_data`
+    WHERE EXTRACT(YEAR FROM date) = 2020
+),
+Costs_2021 AS (
+    SELECT
+        SUM(criteo_cost) AS Criteo_TotalCost,
+        SUM(google_cost) AS Google_TotalCost,
+        SUM(meta_cost) AS Meta_TotalCost,
+        SUM(rtbhouse_cost) AS RTBhouse_TotalCost,
+        SUM(tiktok_cost) AS Tiktok_TotalCost 
+    FROM `prism_acquire.adplatform_data`
+    WHERE EXTRACT(YEAR FROM date) = 2021
+)
+SELECT *
+FROM Costs_2020
+UNION ALL
+SELECT *
+FROM Costs_2021;
+
+--- Order top Traffic_sources
+
+SELECT
+    COUNT(DISTINCT session_id) AS Total_Users,
+    CASE
+        WHEN traffic_source LIKE '%facebook%' OR traffic_source LIKE '%insta%' THEN 'meta'
+        WHEN traffic_source LIKE '%you%' THEN 'google'
+        WHEN traffic_source LIKE '%tiktok%' THEN 'tiktok'
+        ELSE traffic_source
+    END AS Grouped_Source
+FROM `prism_acquire.sessions`
+GROUP BY Grouped_Source
+ORDER BY Total_Users DESC;
+
+
+---Traffic Conversion rates --Conversion rate = successful purchases from site ---
+WITH all_sessions AS (
+    SELECT
+        session_id,
+        CASE
+            WHEN traffic_source LIKE '%facebook%' OR traffic_source LIKE '%insta%' THEN 'meta'
+            WHEN traffic_source LIKE '%you%' THEN 'google'
+            WHEN traffic_source LIKE '%tiktok%' THEN 'tiktok'
+            ELSE traffic_source
+        END AS traffic_source,
+        EXTRACT(QUARTER FROM date) AS quarter
+    FROM
+        `prism_acquire.sessions`
+    WHERE
+        EXTRACT(YEAR FROM date) = 2020
+),
+purchases AS (
+    SELECT
+        session_id,
+        COUNT(event_name) AS purchase_count
+    FROM
+        `prism_acquire.funnelevents`
+    WHERE
+        event_name = 'purchase'
+        AND EXTRACT(YEAR FROM date) = 2020
+    GROUP BY
+        session_id
+)
+SELECT
+    s.traffic_source,
+    s.quarter,
+    COUNT(s.session_id) AS total_sessions,
+    COUNT(p.session_id) AS purchase_sessions,
+    (COUNT(p.session_id) / COUNT(s.session_id)) * 100 AS conversion_rate
+FROM
+    all_sessions s
+LEFT JOIN
+    purchases p ON s.session_id = p.session_id
+GROUP BY
+    s.traffic_source, s.quarter
+ORDER BY
+    s.quarter, conversion_rate DESC;
+
